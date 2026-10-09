@@ -2,6 +2,7 @@ from fastapi import (
     APIRouter,
     Depends,
     Query,
+    BackgroundTasks,
 )
 
 from sqlalchemy.orm import Session
@@ -15,6 +16,8 @@ from app.models import User
 from app.models.enums import TicketStatus
 
 from app.modules.tickets import service
+
+from app.modules.chat.manager import manager
 
 from app.modules.tickets.schemas import (
     CreateTicketRequest,
@@ -89,17 +92,32 @@ def get_ticket(
 def update_ticket(
     ticket_id: int,
     data: UpdateTicketRequest,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
 
-    return service.update_ticket(
+    updated_ticket = service.update_ticket(
         db,
         user,
         ticket_id,
         data,
     )
 
+    ticket_payload = TicketResponse.model_validate(
+        updated_ticket
+    ).model_dump(mode="json")
+
+    background_tasks.add_task(
+        manager.broadcast,
+        ticket_id,
+        {
+            "type": "ticket.updated",
+            "ticket": ticket_payload,
+        },
+    )
+
+    return updated_ticket
 
 @router.get(
     "/{ticket_id}/messages",

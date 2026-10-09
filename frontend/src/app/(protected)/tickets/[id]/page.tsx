@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useRef, type FormEvent } from "react";
 
 import { useParams } from "next/navigation";
 
@@ -33,6 +33,20 @@ const nextStatus: Partial<
   resolved: "closed",
 };
 
+type TicketSocketEvent =
+  | {
+      type: "message.created";
+      message: Message;
+    }
+  | {
+      type: "ticket.updated";
+      ticket: Ticket;
+    }
+  | {
+      type: "error";
+      detail: string;
+    };
+
 
 function TicketDetailContent() {
   const params = useParams<{ id: string }>();
@@ -50,6 +64,14 @@ function TicketDetailContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const [draft, setDraft] = useState("");
+
+  const [socketConnected, setSocketConnected] = useState(false);
+
+  const [socketError, setSocketError] = useState("");
 
 
   useEffect(() => {
@@ -85,6 +107,78 @@ function TicketDetailContent() {
             );
           }
         }
+
+        const token = sessionStorage.getItem("access_token");
+
+        if (!token) {
+          throw new Error("Access token not found");
+        }
+
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL ??
+          "http://localhost:8000";
+
+        const wsUrl = apiUrl.replace(/^http/, "ws");
+
+        const socket = new WebSocket(
+          `${wsUrl}/ws/tickets/${ticketId}?token=${encodeURIComponent(token)}`
+        );
+
+        socketRef.current = socket;
+
+        socket.onopen = () => {
+          if (!active) return;
+
+          setSocketConnected(true);
+          setSocketError("");
+        };
+
+        socket.onmessage = (event: MessageEvent<string>) => {
+          if (!active) return;
+
+          try {
+            const payload = JSON.parse(
+              event.data
+            ) as TicketSocketEvent;
+
+            switch (payload.type) {
+              case "message.created":
+                setMessages((previous) => {
+                  const exists = previous.some(
+                    (message) => message.id === payload.message.id
+                  );
+
+                  if (exists) return previous;
+
+                  return [...previous, payload.message];
+                });
+
+                break;
+
+              case "ticket.updated":
+                setTicket(payload.ticket);
+                break;
+
+              case "error":
+                setSocketError(payload.detail);
+                break;
+            }
+          } catch {
+            setSocketError("Invalid WebSocket event");
+          }
+        };
+
+        socket.onerror = () => {
+          if (!active) return;
+
+          setSocketError("WebSocket connection error");
+        };
+
+        socket.onclose = () => {
+          if (!active) return;
+
+          setSocketConnected(false);
+        };
       } catch (err) {
         if (active) {
           setError(
@@ -102,6 +196,9 @@ function TicketDetailContent() {
 
     return () => {
       active = false;
+
+      socketRef.current?.close();
+      socketRef.current = null;
     };
   }, [ticketId]);
 
@@ -122,6 +219,33 @@ function TicketDetailContent() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleSendMessage(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    const body = draft.trim();
+
+    if (!body) return;
+
+    const socket = socketRef.current;
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setSocketError("WebSocket is not connected");
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: "message.send",
+        body,
+      })
+    );
+
+    setDraft("");
+    setSocketError("");
   }
 
 
@@ -189,10 +313,68 @@ function TicketDetailContent() {
             ))}
           </div>
 
-          <p className="mt-6 text-sm text-gray-500">
-            Real-time messaging will be enabled in the
-            next milestone.
-          </p>
+          <div className="mt-6 border-t pt-4">
+            <div className="mb-4 flex items-center gap-2">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  socketConnected
+                    ? "bg-green-500"
+                    : "bg-red-500"
+                }`}
+              />
+
+              <span className="text-sm text-gray-500">
+                {socketConnected
+                  ? "Connected"
+                  : "Disconnected"}
+              </span>
+            </div>
+
+            {socketError && (
+              <p className="mb-3 text-sm text-red-500">
+                {socketError}
+              </p>
+            )}
+
+            {ticket.status === "closed" ? (
+              <div className="rounded-lg bg-gray-100 p-4 text-sm text-gray-600">
+                This ticket is closed. New messages are disabled.
+              </div>
+            ) : role === "admin" ? (
+              <div className="rounded-lg bg-gray-100 p-4 text-sm text-gray-600">
+                Admin can monitor this conversation.
+                Messaging is available to agents and customers.
+              </div>
+            ) : (
+              <form
+                onSubmit={handleSendMessage}
+                className="flex gap-3"
+              >
+                <input
+                  type="text"
+                  value={draft}
+                  onChange={(event) =>
+                    setDraft(event.target.value)
+                  }
+                  placeholder="Type your message..."
+                  maxLength={5000}
+                  disabled={!socketConnected}
+                  className="flex-1 rounded-lg border p-3 disabled:opacity-50"
+                />
+
+                <button
+                  type="submit"
+                  disabled={
+                    !socketConnected ||
+                    !draft.trim()
+                  }
+                  className="rounded-lg bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       </section>
 
