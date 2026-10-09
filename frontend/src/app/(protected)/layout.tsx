@@ -8,7 +8,7 @@ import { apiRequest } from "@/lib/api";
 import type { MeResponse } from "@/lib/api";
 
 import { AuthContext } from "@/features/auth/auth-context";
-import { AppSidebar } from "@/components/ui/layout/app-sidebar";
+import { AppSidebar } from "@/components/layout/app-sidebar";
 
 import { Skeleton } from "@/components/ui/skeleton";
 
