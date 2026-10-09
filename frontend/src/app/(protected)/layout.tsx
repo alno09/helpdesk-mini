@@ -35,34 +35,38 @@ export default function ProtectedLayout({
     };
   }, [router]);
 
-  if (!me) {
-    return <p className="p-6">Loading session...</p>;
-  }
-
   return (
-    <div>
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b p-4">
-        <div>
-          <h1 className="font-bold">HelpDesk Mini</h1>
-          <p className="text-sm">
-            {me.business.name} — {me.user.role}
-          </p>
-        </div>
+     <div>
+      {!me && (
+        <p className="p-6">Loading session...</p>
+      )}
 
-        <nav className="flex items-center gap-4">
-          <Link href="/tickets">Tickets</Link>
+      {me && (
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b p-4">
+          <div>
+            <h1 className="font-bold">HelpDesk Mini</h1>
+            <p className="text-sm">
+              {me.business.name} — {me.user.role}
+            </p>
+          </div>
 
-          {me.user.role === "admin" && (
-            <Link href="/admin/users">Users</Link>
-          )}
+          <nav className="flex items-center gap-4">
+            <Link href="/tickets">Tickets</Link>
 
-          <button onClick={logout} className="text-red-500">
-            Logout
-          </button>
-        </nav>
-      </header>
+            {me.user.role === "admin" && (
+              <Link href="/admin/users">Users</Link>
+            )}
 
-      <main>{children}</main>
+            <button onClick={logout} className="text-red-500">
+              Logout
+            </button>
+          </nav>
+        </header>
+      )}
+
+      <main hidden={!me}>
+        {children}
+      </main>
     </div>
   );
 }
