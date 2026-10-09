@@ -1,14 +1,30 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
-import { useEffect, useState } from "react";
+import { Plus, Ticket as TicketIcon } from "lucide-react";
 
-import { apiRequest } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+} from "@/components/ui/card";
 
-import type { MeResponse } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
+import { Skeleton } from "@/components/ui/skeleton";
+
+import { useAuth } from "@/features/auth/auth-context";
 import { getTickets } from "@/features/tickets/api";
+
+import { TicketStatusBadge } from "@/features/tickets/components/ticket-status-badge";
 
 import type {
   Ticket,
@@ -25,38 +41,28 @@ const statuses: TicketStatus[] = [
 
 
 export default function TicketsPage() {
+  const me = useAuth();
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
 
   const [status, setStatus] = useState<
-    TicketStatus | ""
-  >("");
-
-  const [me, setMe] = useState<MeResponse | null>(null);
+    TicketStatus | "all"
+  >("all");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
 
   useEffect(() => {
-    apiRequest<MeResponse>("/auth/me")
-      .then(setMe)
-      .catch(() => {
-        setError("Failed to load user information");
-      });
-  }, []);
+    if (!me) return;
 
-
-  useEffect(() => {
     let active = true;
 
-    setLoading(true);
-    setError("");
-
-    getTickets(status || undefined)
+    getTickets(status === "all" ? undefined : status)
       .then((data) => {
         if (active) setTickets(data);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (active) {
           setError(
             err instanceof Error
@@ -72,101 +78,156 @@ export default function TicketsPage() {
     return () => {
       active = false;
     };
-  }, [status]);
+  }, [status, me]);
 
 
   return (
-    <main className="mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold">
-          Tickets
-        </h1>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Tickets
+          </h1>
+
+          <p className="mt-1 text-sm text-muted-foreground">
+            Manage and track support requests.
+          </p>
+        </div>
 
         {me?.user.role === "customer" && (
-          <Link
-            href="/tickets/new"
-            className="rounded bg-blue-600 px-4 py-2 text-white"
-          >
-            New Ticket
-          </Link>
+          <Button asChild>
+            <Link href="/tickets/new">
+              <Plus size={16} />
+              New Ticket
+            </Link>
+          </Button>
         )}
       </div>
 
-      <div className="mb-6">
-        <label className="mb-2 block text-sm font-medium">
-          Filter by status
-        </label>
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 pt-6">
+          <div>
+            <p className="text-sm text-muted-foreground">
+              Tickets found
+            </p>
 
-        <select
-          className="rounded border p-2"
-          value={status}
-          onChange={(event) =>
-            setStatus(
-              event.target.value as TicketStatus | "",
-            )
-          }
-        >
-          <option value="">All tickets</option>
+            <p className="text-2xl font-bold">
+              {loading ? "..." : tickets.length}
+            </p>
+          </div>
 
-          {statuses.map((item) => (
-            <option key={item} value={item}>
-              {item.replaceAll("_", " ")}
-            </option>
-          ))}
-        </select>
-      </div>
+          <Select
+            value={status}
+            onValueChange={(value) => {
+              setLoading(true);
+              setError("");
+              setStatus(value as TicketStatus | "all");
+            }}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Filter status" />
+            </SelectTrigger>
 
-      {loading && <p>Loading tickets...</p>}
+            <SelectContent>
+              <SelectItem value="all">
+                All statuses
+              </SelectItem>
+
+              {statuses.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {item.replaceAll("_", " ")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
       {error && (
-        <p className="text-red-500">{error}</p>
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
       )}
 
-      {!loading && !error && tickets.length === 0 && (
-        <p>No tickets found.</p>
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((item) => (
+            <Skeleton
+              key={item}
+              className="h-28 w-full"
+            />
+          ))}
+        </div>
+      ) : !error && tickets.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
+            <TicketIcon
+              size={36}
+              className="text-muted-foreground"
+            />
+
+            <h2 className="font-semibold">
+              No tickets found
+            </h2>
+
+            <p className="text-sm text-muted-foreground">
+              There are no tickets matching this filter.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {tickets.map((ticket) => (
+            <Link
+              key={ticket.id}
+              href={`/tickets/${ticket.id}`}
+              className="block"
+            >
+              <Card className="transition-colors hover:bg-accent/40">
+                <CardContent className="space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        TICKET #{ticket.id}
+                      </p>
+
+                      <h2 className="mt-1 font-semibold">
+                        {ticket.subject}
+                      </h2>
+                    </div>
+
+                    <TicketStatusBadge
+                      status={ticket.status}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
+                    <span>
+                      Category: {ticket.category}
+                    </span>
+
+                    <span>
+                      Priority: {ticket.priority}
+                    </span>
+
+                    <span>
+                      Agent:{" "}
+                      {ticket.assigned_agent_id ?? "Unassigned"}
+                    </span>
+
+                    <span>
+                      Updated:{" "}
+                      {new Date(
+                        ticket.updated_at,
+                      ).toLocaleString()}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
       )}
-
-      <div className="space-y-3">
-        {tickets.map((ticket) => (
-          <Link
-            key={ticket.id}
-            href={`/tickets/${ticket.id}`}
-            className="block rounded-lg border p-4 transition hover:bg-gray-50"
-          >
-            <div className="flex justify-between gap-4">
-              <div>
-                <h2 className="font-semibold">
-                  #{ticket.id} — {ticket.subject}
-                </h2>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  {ticket.category}
-                </p>
-              </div>
-
-              <span className="text-sm">
-                {ticket.status.replaceAll("_", " ")}
-              </span>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-500">
-              <span>
-                Priority: {ticket.priority}
-              </span>
-
-              <span>
-                Agent:{" "}
-                {ticket.assigned_agent_id ?? "Unassigned"}
-              </span>
-
-              <span>
-                Updated:{" "}
-                {new Date(ticket.updated_at).toLocaleString()}
-              </span>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </main>
+    </div>
   );
 }

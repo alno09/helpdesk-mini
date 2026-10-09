@@ -1,21 +1,57 @@
 "use client";
 
-import { Suspense, useEffect, useState, useRef, type FormEvent } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+} from "react";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { apiRequest } from "@/lib/api";
+import { ArrowLeft, Send } from "lucide-react";
 
-import type {
-  MeResponse,
-  User,
-} from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import { apiRequest, type User } from "@/lib/api";
+
+import { useAuth } from "@/features/auth/auth-context";
 
 import {
   getTicket,
   getTicketMessages,
   updateTicket,
 } from "@/features/tickets/api";
+
+import { TicketStatusBadge } from "@/features/tickets/components/ticket-status-badge";
+
+import {
+  useTicketRoom,
+  type TicketRoomEvent,
+} from "@/features/chat/hooks/use-ticket-room";
 
 import type {
   Ticket,
@@ -24,6 +60,9 @@ import type {
   UpdateTicketPayload,
 } from "@/features/tickets/types";
 
+// ============================================================
+// CONSTANTS
+// ============================================================
 
 const nextStatus: Partial<
   Record<TicketStatus, TicketStatus>
@@ -33,182 +72,159 @@ const nextStatus: Partial<
   resolved: "closed",
 };
 
-type TicketSocketEvent =
-  | {
-      type: "message.created";
-      message: Message;
-    }
-  | {
-      type: "ticket.updated";
-      ticket: Ticket;
-    }
-  | {
-      type: "error";
-      detail: string;
-    };
+// ============================================================
+// TICKET DETAIL CONTENT
+// ============================================================
 
+function TicketDetailContent({
+  ticketId,
+}: {
+  ticketId: number;
+}) {
+  const me = useAuth();
 
-function TicketDetailContent() {
-  const params = useParams<{ id: string }>();
-
-  const ticketId = Number(params.id);
-
+  // Ticket state
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-
-  const [me, setMe] = useState<MeResponse | null>(null);
   const [agents, setAgents] = useState<User[]>([]);
 
+  // Form state
+  const [draft, setDraft] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("");
 
+  // UI state
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const socketRef = useRef<WebSocket | null>(null);
+  // ==========================================================
+  // WEBSOCKET EVENT HANDLER
+  // ==========================================================
 
-  const [draft, setDraft] = useState("");
+  const handleRoomEvent = useCallback(
+    (event: TicketRoomEvent) => {
+      switch (event.type) {
+        case "message.created": {
+          setMessages((previous) => {
+            const exists = previous.some(
+              (message) => message.id === event.message.id,
+            );
 
-  const [socketConnected, setSocketConnected] = useState(false);
+            if (exists) {
+              return previous;
+            }
 
-  const [socketError, setSocketError] = useState("");
+            return [...previous, event.message];
+          });
 
+          break;
+        }
+
+        case "ticket.updated": {
+          setTicket(event.ticket);
+          break;
+        }
+
+        case "error": {
+          setError(event.detail);
+          break;
+        }
+      }
+    },
+    [],
+  );
+
+  // ==========================================================
+  // WEBSOCKET CONNECTION
+  // ==========================================================
+
+  const {
+    connected,
+    error: socketError,
+    sendMessage,
+  } = useTicketRoom(
+    ticketId,
+    Boolean(me && ticket?.id === ticketId),
+    handleRoomEvent,
+  );
+
+  // ==========================================================
+  // INITIAL DATA FETCHING
+  // ==========================================================
 
   useEffect(() => {
-    let active = true;
-
-    if (!Number.isInteger(ticketId) || ticketId <= 0) {
-      setError("Invalid ticket ID");
-      setLoading(false);
+    if (!me) {
       return;
     }
 
-    async function load() {
-      try {
-        const [ticketData, messageData, meData] =
-          await Promise.all([
-            getTicket(ticketId),
-            getTicketMessages(ticketId),
-            apiRequest<MeResponse>("/auth/me"),
-          ]);
+    if (!Number.isInteger(ticketId) || ticketId <= 0) {
+      return;
+    }
 
-        if (!active) return;
+    let active = true;
+
+    const agentsRequest =
+      me.user.role === "admin"
+        ? apiRequest<User[]>("/users")
+        : Promise.resolve<User[]>([]);
+
+    Promise.all([
+      getTicket(ticketId),
+      getTicketMessages(ticketId),
+      agentsRequest,
+    ])
+      .then(([ticketData, messageData, agentsData]) => {
+        if (!active) {
+          return;
+        }
 
         setTicket(ticketData);
         setMessages(messageData);
-        setMe(meData);
 
-        if (meData.user.role === "admin") {
-          const users = await apiRequest<User[]>("/users");
-
-          if (active) {
-            setAgents(
-              users.filter((user) => user.role === "agent"),
-            );
-          }
-        }
-
-        const token = sessionStorage.getItem("access_token");
-
-        if (!token) {
-          throw new Error("Access token not found");
-        }
-
-        const apiUrl =
-          process.env.NEXT_PUBLIC_API_URL ??
-          "http://localhost:8000";
-
-        const wsUrl = apiUrl.replace(/^http/, "ws");
-
-        const socket = new WebSocket(
-          `${wsUrl}/ws/tickets/${ticketId}?token=${encodeURIComponent(token)}`
+        setAgents(
+          agentsData.filter(
+            (user) => user.role === "agent",
+          ),
         );
-
-        socketRef.current = socket;
-
-        socket.onopen = () => {
-          if (!active) return;
-
-          setSocketConnected(true);
-          setSocketError("");
-        };
-
-        socket.onmessage = (event: MessageEvent<string>) => {
-          if (!active) return;
-
-          try {
-            const payload = JSON.parse(
-              event.data
-            ) as TicketSocketEvent;
-
-            switch (payload.type) {
-              case "message.created":
-                setMessages((previous) => {
-                  const exists = previous.some(
-                    (message) => message.id === payload.message.id
-                  );
-
-                  if (exists) return previous;
-
-                  return [...previous, payload.message];
-                });
-
-                break;
-
-              case "ticket.updated":
-                setTicket(payload.ticket);
-                break;
-
-              case "error":
-                setSocketError(payload.detail);
-                break;
-            }
-          } catch {
-            setSocketError("Invalid WebSocket event");
-          }
-        };
-
-        socket.onerror = () => {
-          if (!active) return;
-
-          setSocketError("WebSocket connection error");
-        };
-
-        socket.onclose = () => {
-          if (!active) return;
-
-          setSocketConnected(false);
-        };
-      } catch (err) {
-        if (active) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load ticket",
-          );
+      })
+      .catch((err: unknown) => {
+        if (!active) {
+          return;
         }
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
 
-    void load();
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load ticket",
+        );
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
 
     return () => {
       active = false;
-
-      socketRef.current?.close();
-      socketRef.current = null;
     };
-  }, [ticketId]);
+  }, [ticketId, me]);
 
+  // ==========================================================
+  // TICKET UPDATE HANDLER
+  // ==========================================================
 
-  async function handleUpdate(data: UpdateTicketPayload) {
+  async function handleUpdate(
+    data: UpdateTicketPayload,
+  ) {
     setSaving(true);
     setError("");
 
     try {
-      const updated = await updateTicket(ticketId, data);
+      const updated = await updateTicket(
+        ticketId,
+        data,
+      );
+
       setTicket(updated);
     } catch (err) {
       setError(
@@ -221,6 +237,10 @@ function TicketDetailContent() {
     }
   }
 
+  // ==========================================================
+  // MESSAGE HANDLER
+  // ==========================================================
+
   function handleSendMessage(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -228,282 +248,528 @@ function TicketDetailContent() {
 
     const body = draft.trim();
 
-    if (!body) return;
-
-    const socket = socketRef.current;
-
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      setSocketError("WebSocket is not connected");
+    if (!body) {
       return;
     }
 
-    socket.send(
-      JSON.stringify({
-        type: "message.send",
-        body,
-      })
-    );
+    const success = sendMessage(body);
+
+    if (!success) {
+      setError("WebSocket is not connected");
+      return;
+    }
 
     setDraft("");
-    setSocketError("");
+    setError("");
   }
 
+  // ==========================================================
+  // INVALID ID
+  // ==========================================================
 
-  if (loading) {
-    return <p className="p-6">Loading ticket...</p>;
-  }
-
-  if (!ticket || !me) {
+  if (
+    !Number.isInteger(ticketId) ||
+    ticketId <= 0
+  ) {
     return (
-      <p className="p-6 text-red-500">
-        {error || "Ticket not found"}
-      </p>
+      <div className="mx-auto max-w-3xl space-y-4 p-6">
+        <h1 className="text-xl font-semibold">
+          Invalid Ticket ID
+        </h1>
+
+        <p className="text-sm text-muted-foreground">
+          The requested ticket ID is invalid.
+        </p>
+
+        <Button variant="outline" asChild>
+          <Link href="/tickets">
+            Back to Tickets
+          </Link>
+        </Button>
+      </div>
     );
   }
 
+  // ==========================================================
+  // LOADING STATE
+  // ==========================================================
+
+  if (!me || loading) {
+    return (
+      <div className="space-y-5">
+        <Skeleton className="h-10 w-64" />
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <Skeleton className="h-125 w-full" />
+          <Skeleton className="h-75 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================================
+  // ERROR / NOT FOUND STATE
+  // ==========================================================
+
+  if (!ticket || ticket.id !== ticketId) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-xl font-semibold">
+          Unable to load ticket
+        </h1>
+
+        <p
+          role="alert"
+          className="text-sm text-destructive"
+        >
+          {error || "Ticket not found"}
+        </p>
+
+        <Button variant="outline" asChild>
+          <Link href="/tickets">
+            Back to Tickets
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  // ==========================================================
+  // ROLE & PERMISSION
+  // ==========================================================
 
   const role = me.user.role;
 
-  const isStaff = role === "admin" || role === "agent";
+  const isStaff =
+    role === "admin" ||
+    role === "agent";
 
-  const allowedNextStatus = nextStatus[ticket.status];
+  const allowedNextStatus =
+    nextStatus[ticket.status];
 
+  const canSend =
+    role !== "admin" &&
+    ticket.status !== "closed";
+
+  // ==========================================================
+  // RENDER
+  // ==========================================================
 
   return (
-    <main className="mx-auto grid max-w-6xl gap-6 p-6 md:grid-cols-[1fr_300px]">
+    <div className="mx-auto max-w-7xl space-y-6">
 
-      <section>
-        <h1 className="mb-2 text-2xl font-bold">
-          #{ticket.id} — {ticket.subject}
-        </h1>
+      {/* BACK NAVIGATION */}
 
-        <p className="mb-6 text-sm text-gray-500">
-          {ticket.category}
-        </p>
+      <Button variant="ghost" asChild>
+        <Link href="/tickets">
+          <ArrowLeft size={16} />
+          Back to Tickets
+        </Link>
+      </Button>
 
-        <div className="rounded-lg border p-4">
-          <h2 className="mb-4 font-semibold">
-            Conversation
-          </h2>
+      {/* PAGE HEADER */}
 
-          <div className="space-y-4">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className="rounded-lg bg-gray-50 p-3"
-              >
-                <div className="mb-2 flex flex-wrap justify-between gap-2">
-                  <span className="font-medium">
-                    {message.sender_name}
-                    {" "}
-                    ({message.sender_role})
-                  </span>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Ticket #{ticket.id}
+          </p>
 
-                  <span className="text-xs text-gray-500">
-                    {new Date(
-                      message.created_at,
-                    ).toLocaleString()}
-                  </span>
-                </div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {ticket.subject}
+          </h1>
 
-                <p className="whitespace-pre-wrap">
-                  {message.body}
-                </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Created{" "}
+            {new Date(
+              ticket.created_at,
+            ).toLocaleString()}
+          </p>
+        </div>
+
+        <TicketStatusBadge
+          status={ticket.status}
+        />
+      </div>
+
+      {/* MAIN CONTENT */}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+
+        {/* ============================================== */}
+        {/* CONVERSATION PANEL */}
+        {/* ============================================== */}
+
+        <Card className="min-w-0">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>
+                  Conversation
+                </CardTitle>
+
+                <CardDescription className="mt-1">
+                  Ticket support messages
+                </CardDescription>
               </div>
-            ))}
-          </div>
 
-          <div className="mt-6 border-t pt-4">
-            <div className="mb-4 flex items-center gap-2">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  socketConnected
-                    ? "bg-green-500"
-                    : "bg-red-500"
-                }`}
-              />
-
-              <span className="text-sm text-gray-500">
-                {socketConnected
+              <Badge
+                variant={
+                  connected
+                    ? "secondary"
+                    : "outline"
+                }
+              >
+                {connected
                   ? "Connected"
                   : "Disconnected"}
-              </span>
+              </Badge>
             </div>
+          </CardHeader>
 
-            {socketError && (
-              <p className="mb-3 text-sm text-red-500">
-                {socketError}
+          <CardContent className="space-y-4">
+
+            {/* MESSAGE HISTORY */}
+
+            <ScrollArea className="h-100 rounded-lg border p-4">
+              <div className="space-y-4">
+
+                {messages.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground">
+                    No messages yet.
+                  </p>
+                )}
+
+                {messages.map((message) => {
+                  const isMine =
+                    message.sender_id === me.user.id;
+
+                  return (
+                    <div
+                      key={message.id}
+                      className={[
+                        "max-w-[85%] rounded-xl p-3",
+                        isMine
+                          ? "ml-auto bg-primary text-primary-foreground"
+                          : "bg-muted",
+                      ].join(" ")}
+                    >
+
+                      {/* MESSAGE HEADER */}
+
+                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs opacity-80">
+                        <span className="font-semibold">
+                          {message.sender_name}
+                        </span>
+
+                        <span className="capitalize">
+                          {message.sender_role}
+                        </span>
+                      </div>
+
+                      {/* MESSAGE BODY */}
+
+                      <p className="whitespace-pre-wrap wrap-break-word text-sm">
+                        {message.body}
+                      </p>
+
+                      {/* MESSAGE TIMESTAMP */}
+
+                      <p className="mt-2 text-right text-xs opacity-70">
+                        {new Date(
+                          message.created_at,
+                        ).toLocaleString()}
+                      </p>
+
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+
+            {/* ERRORS */}
+
+            {(error || socketError) && (
+              <p
+                role="alert"
+                className="text-sm text-destructive"
+              >
+                {error || socketError}
               </p>
             )}
 
-            {ticket.status === "closed" ? (
-              <div className="rounded-lg bg-gray-100 p-4 text-sm text-gray-600">
-                This ticket is closed. New messages are disabled.
-              </div>
-            ) : role === "admin" ? (
-              <div className="rounded-lg bg-gray-100 p-4 text-sm text-gray-600">
-                Admin can monitor this conversation.
-                Messaging is available to agents and customers.
-              </div>
-            ) : (
+            {/* MESSAGE COMPOSER */}
+
+            {canSend ? (
               <form
                 onSubmit={handleSendMessage}
-                className="flex gap-3"
+                className="space-y-3"
               >
-                <input
-                  type="text"
+                <Textarea
+                  placeholder="Write your message..."
                   value={draft}
+                  maxLength={5000}
+                  disabled={!connected}
                   onChange={(event) =>
                     setDraft(event.target.value)
                   }
-                  placeholder="Type your message..."
-                  maxLength={5000}
-                  disabled={!socketConnected}
-                  className="flex-1 rounded-lg border p-3 disabled:opacity-50"
+                  className="min-h-24"
                 />
 
-                <button
-                  type="submit"
-                  disabled={
-                    !socketConnected ||
-                    !draft.trim()
-                  }
-                  className="rounded-lg bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
-                >
-                  Send
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <aside className="h-fit rounded-lg border p-4">
-        <h2 className="mb-4 font-semibold">
-          Ticket Information
-        </h2>
-
-        <div className="space-y-3 text-sm">
-          <p>Status: {ticket.status}</p>
-          <p>Priority: {ticket.priority}</p>
-          <p>Category: {ticket.category}</p>
-
-          <p>
-            Assigned Agent:{" "}
-            {ticket.assigned_agent_id ?? "Unassigned"}
-          </p>
-        </div>
-
-        <div className="mt-6 space-y-3">
-
-          {role === "agent" &&
-            ticket.assigned_agent_id === null && (
-              <button
-                disabled={saving}
-                onClick={() =>
-                  handleUpdate({ take: true })
-                }
-                className="w-full rounded bg-blue-600 p-3 text-white disabled:opacity-50"
-              >
-                Take Ticket
-              </button>
-            )}
-
-          {isStaff && allowedNextStatus && (
-            <button
-              disabled={saving}
-              onClick={() =>
-                handleUpdate({
-                  status: allowedNextStatus,
-                })
-              }
-              className="w-full rounded bg-green-600 p-3 text-white disabled:opacity-50"
-            >
-              Move to{" "}
-              {allowedNextStatus.replaceAll("_", " ")}
-            </button>
-          )}
-
-          {role === "customer" &&
-            ticket.status === "resolved" && (
-              <button
-                disabled={saving}
-                onClick={() =>
-                  handleUpdate({
-                    status: "open",
-                  })
-                }
-                className="w-full rounded bg-orange-600 p-3 text-white disabled:opacity-50"
-              >
-                Reopen Ticket
-              </button>
-            )}
-
-          {role === "admin" && (
-            <div className="space-y-2">
-              <select
-                className="w-full rounded border p-2"
-                value={selectedAgent}
-                onChange={(event) =>
-                  setSelectedAgent(event.target.value)
-                }
-              >
-                <option value="">
-                  Select Agent
-                </option>
-
-                {agents.map((agent) => (
-                  <option
-                    key={agent.id}
-                    value={agent.id}
+                <div className="flex justify-end">
+                  <Button
+                    type="submit"
+                    disabled={
+                      !connected ||
+                      !draft.trim()
+                    }
                   >
-                    {agent.name}
-                  </option>
-                ))}
-              </select>
+                    <Send size={16} />
+                    Send Message
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                {ticket.status === "closed"
+                  ? "This ticket is closed. New messages are disabled."
+                  : "Only agents and customers can send messages."}
+              </div>
+            )}
 
-              <button
-                disabled={saving || !selectedAgent}
-                onClick={() =>
-                  handleUpdate({
-                    assigned_agent_id:
-                      Number(selectedAgent),
-                  })
-                }
-                className="w-full rounded bg-blue-600 p-3 text-white disabled:opacity-50"
-              >
-                Assign Agent
-              </button>
+          </CardContent>
+        </Card>
+
+        {/* ============================================== */}
+        {/* TICKET INFORMATION SIDEBAR */}
+        {/* ============================================== */}
+
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle>
+              Ticket Details
+            </CardTitle>
+
+            <CardDescription>
+              Information and actions
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-5">
+
+            {/* TICKET INFORMATION */}
+
+            <div className="space-y-3 text-sm">
+
+              {/* STATUS */}
+
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">
+                  Status
+                </span>
+
+                <TicketStatusBadge
+                  status={ticket.status}
+                />
+              </div>
+
+              {/* PRIORITY */}
+
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">
+                  Priority
+                </span>
+
+                <span className="capitalize">
+                  {ticket.priority}
+                </span>
+              </div>
+
+              {/* CATEGORY */}
+
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">
+                  Category
+                </span>
+
+                <span>
+                  {ticket.category}
+                </span>
+              </div>
+
+              {/* ASSIGNED AGENT */}
+
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">
+                  Assigned Agent
+                </span>
+
+                <span>
+                  {ticket.assigned_agent_id ??
+                    "Unassigned"}
+                </span>
+              </div>
+
             </div>
-          )}
-        </div>
 
-        {error && (
-          <p className="mt-4 text-sm text-red-500">
-            {error}
-          </p>
-        )}
-      </aside>
-    </main>
+            {/* ACTIONS */}
+
+            <div className="border-t pt-5">
+              <h3 className="mb-3 text-sm font-semibold">
+                Actions
+              </h3>
+
+              <div className="space-y-3">
+
+                {/* AGENT: TAKE TICKET */}
+
+                {role === "agent" &&
+                  ticket.assigned_agent_id === null && (
+                    <Button
+                      className="w-full"
+                      disabled={saving}
+                      onClick={() =>
+                        handleUpdate({
+                          take: true,
+                        })
+                      }
+                    >
+                      Take Ticket
+                    </Button>
+                  )}
+
+                {/* STAFF: STATUS TRANSITION */}
+
+                {isStaff &&
+                  allowedNextStatus && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled={saving}
+                      onClick={() =>
+                        handleUpdate({
+                          status: allowedNextStatus,
+                        })
+                      }
+                    >
+                      Move to{" "}
+                      {allowedNextStatus.replaceAll(
+                        "_",
+                        " ",
+                      )}
+                    </Button>
+                  )}
+
+                {/* CUSTOMER: REOPEN TICKET */}
+
+                {role === "customer" &&
+                  ticket.status === "resolved" && (
+                    <Button
+                      className="w-full"
+                      disabled={saving}
+                      onClick={() =>
+                        handleUpdate({
+                          status: "open",
+                        })
+                      }
+                    >
+                      Reopen Ticket
+                    </Button>
+                  )}
+
+                {/* ADMIN: ASSIGN AGENT */}
+
+                {role === "admin" && (
+                  <div className="space-y-3">
+                    <Select
+                      value={selectedAgent}
+                      onValueChange={
+                        setSelectedAgent
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue
+                          placeholder="Select Agent"
+                        />
+                      </SelectTrigger>
+
+                      <SelectContent>
+                        {agents.map((agent) => (
+                          <SelectItem
+                            key={agent.id}
+                            value={String(agent.id)}
+                          >
+                            {agent.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <Button
+                      className="w-full"
+                      disabled={
+                        saving ||
+                        !selectedAgent
+                      }
+                      onClick={() =>
+                        handleUpdate({
+                          assigned_agent_id:
+                            Number(selectedAgent),
+                        })
+                      }
+                    >
+                      Assign Agent
+                    </Button>
+                  </div>
+                )}
+
+              </div>
+            </div>
+
+          </CardContent>
+        </Card>
+
+      </div>
+    </div>
   );
 }
+
+// ============================================================
+// ROUTE WRAPPER
+// ============================================================
+
+function TicketDetailRoute() {
+  const params = useParams<{
+    id: string;
+  }>();
+
+  return (
+    <TicketDetailContent
+      key={params.id}
+      ticketId={Number(params.id)}
+    />
+  );
+}
+
+// ============================================================
+// PAGE EXPORT
+// ============================================================
 
 export default function TicketDetailPage() {
   return (
-    <Suspense fallback={<TicketDetailSkeleton />}>
-      <TicketDetailContent />
-    </Suspense>
-  );
-}
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-64" />
 
-function TicketDetailSkeleton() {
-  return (
-    <div className="mx-auto max-w-6xl p-6">
-      <div className="animate-pulse space-y-4">
-        <div className="h-8 w-64 rounded bg-gray-200" />
-        <div className="h-4 w-40 rounded bg-gray-200" />
-        <div className="h-96 rounded-lg bg-gray-200" />
-      </div>
-    </div>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <Skeleton className="h-125 w-full" />
+            <Skeleton className="h-75 w-full" />
+          </div>
+        </div>
+      }
+    >
+      <TicketDetailRoute />
+    </Suspense>
   );
 }

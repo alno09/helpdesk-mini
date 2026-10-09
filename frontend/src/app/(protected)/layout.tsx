@@ -1,14 +1,17 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import type { ReactNode } from "react";
 
-import {
-  apiRequest,
-  logout,
-  MeResponse,
-} from "@/lib/api";
+import { apiRequest } from "@/lib/api";
+import type { MeResponse } from "@/lib/api";
+
+import { AuthContext } from "@/features/auth/auth-context";
+import { AppSidebar } from "@/components/ui/layout/app-sidebar";
+
+import { Skeleton } from "@/components/ui/skeleton";
+
 
 export default function ProtectedLayout({
   children,
@@ -36,37 +39,25 @@ export default function ProtectedLayout({
   }, [router]);
 
   return (
-     <div>
-      {!me && (
-        <p className="p-6">Loading session...</p>
-      )}
+    <AuthContext.Provider value={me}>
+      <div className="min-h-screen bg-muted/30 md:flex">
+        {me ? (
+          <AppSidebar me={me} />
+        ) : (
+          <aside className="hidden w-64 border-r bg-background p-6 md:block">
+            <Skeleton className="mb-8 h-10 w-40" />
+            <Skeleton className="mb-3 h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+          </aside>
+        )}
 
-      {me && (
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b p-4">
-          <div>
-            <h1 className="font-bold">HelpDesk Mini</h1>
-            <p className="text-sm">
-              {me.business.name} — {me.user.role}
-            </p>
-          </div>
-
-          <nav className="flex items-center gap-4">
-            <Link href="/tickets">Tickets</Link>
-
-            {me.user.role === "admin" && (
-              <Link href="/admin/users">Users</Link>
-            )}
-
-            <button onClick={logout} className="text-red-500">
-              Logout
-            </button>
-          </nav>
-        </header>
-      )}
-
-      <main hidden={!me}>
-        {children}
-      </main>
-    </div>
+        <main
+          hidden={!me}
+          className="min-w-0 flex-1 p-4 md:p-8"
+        >
+          {children}
+        </main>
+      </div>
+    </AuthContext.Provider>
   );
 }

@@ -31,7 +31,32 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    void loadUsers();
+    let active = true;
+
+    apiRequest<User[]>("/users")
+      .then((data) => {
+        if (active) {
+          setUsers(data);
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load users"
+          );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

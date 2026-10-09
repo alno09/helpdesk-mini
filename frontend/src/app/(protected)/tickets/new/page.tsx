@@ -1,13 +1,35 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
-import { apiRequest } from "@/lib/api";
+import { ArrowLeft, Send } from "lucide-react";
 
-import type { MeResponse } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import { useAuth } from "@/features/auth/auth-context";
 import { createTicket } from "@/features/tickets/api";
 
 import type {
@@ -17,8 +39,7 @@ import type {
 
 export default function NewTicketPage() {
   const router = useRouter();
-
-  const [allowed, setAllowed] = useState(false);
+  const me = useAuth();
 
   const [form, setForm] = useState({
     subject: "",
@@ -32,25 +53,18 @@ export default function NewTicketPage() {
 
 
   useEffect(() => {
-    apiRequest<MeResponse>("/auth/me")
-      .then((me) => {
-        if (me.user.role !== "customer") {
-          router.replace("/tickets");
-          return;
-        }
-
-        setAllowed(true);
-      })
-      .catch(() => {
-        router.replace("/login");
-      });
-  }, [router]);
+    if (me && me.user.role !== "customer") {
+      router.replace("/tickets");
+    }
+  }, [me, router]);
 
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
+
+    if (me?.user.role !== "customer") return;
 
     setLoading(true);
     setError("");
@@ -71,87 +85,166 @@ export default function NewTicketPage() {
   }
 
 
-  if (!allowed) {
-    return <p className="p-6">Checking access...</p>;
+  if (!me || me.user.role !== "customer") {
+    return null;
   }
 
 
   return (
-    <main className="mx-auto max-w-2xl p-6">
-      <h1 className="mb-6 text-2xl font-bold">
-        Create Ticket
-      </h1>
-
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-4"
+    <div className="mx-auto max-w-3xl space-y-6">
+      <Button
+        variant="ghost"
+        asChild
       >
-        <input
-          className="w-full rounded border p-3"
-          placeholder="Subject"
-          value={form.subject}
-          onChange={(event) =>
-            setForm({
-              ...form,
-              subject: event.target.value,
-            })
-          }
-          required
-        />
+        <Link href="/tickets">
+          <ArrowLeft size={16} />
+          Back to Tickets
+        </Link>
+      </Button>
 
-        <input
-          className="w-full rounded border p-3"
-          placeholder="Category"
-          value={form.category}
-          onChange={(event) =>
-            setForm({
-              ...form,
-              category: event.target.value,
-            })
-          }
-          required
-        />
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">
+          Create Ticket
+        </h1>
 
-        <select
-          className="w-full rounded border p-3"
-          value={form.priority}
-          onChange={(event) =>
-            setForm({
-              ...form,
-              priority: event.target.value as TicketPriority,
-            })
-          }
-        >
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
+        <p className="mt-1 text-muted-foreground">
+          Describe your issue to get assistance.
+        </p>
+      </div>
 
-        <textarea
-          className="min-h-40 w-full rounded border p-3"
-          placeholder="Describe your issue"
-          value={form.message}
-          onChange={(event) =>
-            setForm({
-              ...form,
-              message: event.target.value,
-            })
-          }
-          required
-        />
+      <Card>
+        <CardHeader>
+          <CardTitle>Ticket Information</CardTitle>
+          <CardDescription>
+            Provide details about your request.
+          </CardDescription>
+        </CardHeader>
 
-        {error && (
-          <p className="text-red-500">{error}</p>
-        )}
+        <CardContent>
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-5"
+          >
+            <div className="space-y-2">
+              <label
+                htmlFor="subject"
+                className="text-sm font-medium"
+              >
+                Subject
+              </label>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
-        >
-          {loading ? "Creating..." : "Create Ticket"}
-        </button>
-      </form>
-    </main>
+              <Input
+                id="subject"
+                placeholder="Briefly describe your issue"
+                value={form.subject}
+                minLength={3}
+                maxLength={255}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    subject: event.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="category"
+                className="text-sm font-medium"
+              >
+                Category
+              </label>
+
+              <Input
+                id="category"
+                placeholder="e.g. Billing, Technical"
+                value={form.category}
+                minLength={2}
+                maxLength={100}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    category: event.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Priority
+              </label>
+
+              <Select
+                value={form.priority}
+                onValueChange={(value) =>
+                  setForm({
+                    ...form,
+                    priority: value as TicketPriority,
+                  })
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="message"
+                className="text-sm font-medium"
+              >
+                Description
+              </label>
+
+              <Textarea
+                id="message"
+                placeholder="Explain what happened..."
+                className="min-h-40"
+                value={form.message}
+                maxLength={5000}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    message: event.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+
+            {error && (
+              <p
+                role="alert"
+                className="text-sm text-destructive"
+              >
+                {error}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" asChild>
+                <Link href="/tickets">Cancel</Link>
+              </Button>
+
+              <Button type="submit" disabled={loading}>
+                <Send size={16} />
+                {loading ? "Creating..." : "Create Ticket"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
