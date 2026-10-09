@@ -1,0 +1,30 @@
+cat > .gitignore <<'EOF'
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Logs
+*.log
+EOF
