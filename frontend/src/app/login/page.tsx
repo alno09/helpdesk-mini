@@ -1,20 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import {
-  ArrowRight,
-  Loader2,
-  LockKeyhole,
-  Mail,
-} from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 
 import { AuthShell } from "@/components/layout/auth-shell";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -56,7 +49,6 @@ export default function LoginPage() {
       );
 
       saveTokens(tokens);
-
       router.replace("/tickets");
     } catch (err) {
       setError(
@@ -72,10 +64,10 @@ export default function LoginPage() {
   return (
     <AuthShell
       title="Welcome back"
-      description="Sign in to your workspace to manage support tickets."
+      description="Enter your credentials to access your support workspace."
       footer={
         <>
-          New to HelpDesk Mini?{" "}
+          Don&apos;t have a workspace?{" "}
           <Link
             href="/register"
             className="font-medium text-primary hover:underline"
@@ -89,100 +81,71 @@ export default function LoginPage() {
         onSubmit={handleSubmit}
         className="space-y-5"
       >
-        {/* EMAIL */}
-
         <div className="space-y-2">
           <label
             htmlFor="email"
-            className="text-sm font-medium"
+            className="text-xs font-medium"
           >
             Email address
           </label>
 
-          <div className="relative">
-            <Mail
-              size={17}
-              className="absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
-            />
-
-            <Input
-              id="email"
-              type="email"
-              placeholder="you@company.com"
-              autoComplete="email"
-              className="pl-10"
-              value={email}
-              onChange={(event) =>
-                setEmail(event.target.value)
-              }
-              disabled={loading}
-              required
-            />
-          </div>
+          <Input
+            id="email"
+            type="email"
+            placeholder="you@company.com"
+            autoComplete="email"
+            value={email}
+            disabled={loading}
+            onChange={(event) => setEmail(event.target.value)}
+            className="h-10"
+            required
+          />
         </div>
-
-        {/* PASSWORD */}
 
         <div className="space-y-2">
           <label
             htmlFor="password"
-            className="text-sm font-medium"
+            className="text-xs font-medium"
           >
             Password
           </label>
 
-          <div className="relative">
-            <LockKeyhole
-              size={17}
-              className="absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
-            />
-
-            <Input
-              id="password"
-              type="password"
-              placeholder="Enter your password"
-              autoComplete="current-password"
-              className="pl-10"
-              value={password}
-              onChange={(event) =>
-                setPassword(event.target.value)
-              }
-              disabled={loading}
-              required
-            />
-          </div>
+          <Input
+            id="password"
+            type="password"
+            placeholder="Enter your password"
+            autoComplete="current-password"
+            value={password}
+            disabled={loading}
+            onChange={(event) => setPassword(event.target.value)}
+            className="h-10"
+            required
+          />
         </div>
-
-        {/* ERROR */}
 
         {error && (
           <div
             role="alert"
-            className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+            className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs text-destructive"
           >
             {error}
           </div>
         )}
 
-        {/* SUBMIT */}
-
         <Button
           type="submit"
-          className="w-full"
+          className="h-10 w-full"
           disabled={loading}
         >
           {loading ? (
             <>
-              <Loader2
-                size={17}
-                className="animate-spin"
-              />
+              <Loader2 className="size-4 animate-spin" />
               Signing in...
             </>
           ) : (
             <>
-              Sign In
-              <ArrowRight size={17} />
+              Sign in
+              <ArrowRight className="size-4" />
             </>
           )}
         </Button>

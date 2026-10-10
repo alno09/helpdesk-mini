@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import {
   Headset,
@@ -8,106 +9,206 @@ import {
   Users,
   LogOut,
   Plus,
+  ChevronDown,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 import { logout } from "@/lib/api";
 import type { MeResponse } from "@/lib/api";
-
 
 interface AppSidebarProps {
   me: MeResponse;
 }
 
 export function AppSidebar({ me }: AppSidebarProps) {
+  const pathname = usePathname();
+
   const role = me.user.role;
 
+  const isTicketListActive =
+    pathname === "/tickets" ||
+    (
+      pathname.startsWith("/tickets/") &&
+      pathname !== "/tickets/new"
+    );
+
+  const isCreateTicketActive =
+    pathname === "/tickets/new";
+
+  const isUsersActive =
+    pathname.startsWith("/admin/users");
+
+  function navClass(active: boolean) {
+    return [
+      "flex min-h-9 items-center gap-3",
+      "rounded-md px-3 py-2",
+      "text-[13px] font-medium",
+      "transition-colors",
+      active
+        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+    ].join(" ");
+  }
+
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b bg-background md:min-h-screen md:w-64 md:border-r md:border-b-0">
-      <div className="flex items-center gap-3 p-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <Headset size={22} />
+    <aside
+      className="
+        flex w-full shrink-0 flex-col
+        border-b border-sidebar-border
+        bg-sidebar text-sidebar-foreground
+        md:min-h-screen md:w-60
+        md:border-r md:border-b-0
+      "
+    >
+      {/* Workspace Identity */}
+
+      <div className="flex h-16 items-center gap-3 px-4">
+        <div
+          className="
+            flex size-9 shrink-0 items-center justify-center
+            rounded-lg bg-sidebar-primary
+            text-sidebar-primary-foreground
+          "
+        >
+          <Headset className="size-[18px]" />
         </div>
 
-        <div>
-          <h1 className="font-bold tracking-tight">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-sm font-semibold tracking-tight">
             HelpDesk Mini
           </h1>
-          <p className="text-xs text-muted-foreground">
-            Support Workspace
+
+          <p className="truncate text-[11px] text-muted-foreground">
+            Support workspace
           </p>
         </div>
+
+        <ChevronDown
+          className="size-3.5 shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
       </div>
 
-      <Separator />
+      {/* Navigation */}
 
-      <div className="px-5 py-5">
-        <p className="mb-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="border-t border-sidebar-border px-3 py-4">
+        <p
+          className="
+            mb-2 px-3 text-[10px] font-semibold
+            uppercase tracking-[0.12em]
+            text-muted-foreground
+          "
+        >
           Workspace
         </p>
 
-        <nav className="flex flex-wrap gap-2 md:flex-col">
-          <Button
-            variant="ghost"
-            className="justify-start"
-            asChild
+        <nav
+          aria-label="Main navigation"
+          className="flex flex-wrap gap-1 md:flex-col"
+        >
+          <Link
+            href="/tickets"
+            aria-current={
+              isTicketListActive ? "page" : undefined
+            }
+            className={navClass(isTicketListActive)}
           >
-            <Link href="/tickets">
-              <Ticket size={17} />
-              Tickets
-            </Link>
-          </Button>
+            <Ticket className="size-4 shrink-0" />
+
+            <span>Tickets</span>
+          </Link>
 
           {role === "customer" && (
-            <Button
-              variant="ghost"
-              className="justify-start"
-              asChild
+            <Link
+              href="/tickets/new"
+              aria-current={
+                isCreateTicketActive ? "page" : undefined
+              }
+              className={navClass(isCreateTicketActive)}
             >
-              <Link href="/tickets/new">
-                <Plus size={17} />
-                Create Ticket
-              </Link>
-            </Button>
+              <Plus className="size-4 shrink-0" />
+
+              <span>New Ticket</span>
+            </Link>
           )}
 
           {role === "admin" && (
-            <Button
-              variant="ghost"
-              className="justify-start"
-              asChild
+            <Link
+              href="/admin/users"
+              aria-current={
+                isUsersActive ? "page" : undefined
+              }
+              className={navClass(isUsersActive)}
             >
-              <Link href="/admin/users">
-                <Users size={17} />
-                User Management
-              </Link>
-            </Button>
+              <Users className="size-4 shrink-0" />
+
+              <span>User Management</span>
+            </Link>
           )}
         </nav>
       </div>
 
-      <div className="mt-auto border-t p-5">
-        <p className="truncate text-sm font-semibold">
-          {me.user.name}
-        </p>
+      {/* Sidebar Footer */}
 
-        <p className="truncate text-xs text-muted-foreground">
-          {me.business.name}
-        </p>
+      <div
+        className="
+          mt-auto border-t border-sidebar-border
+          px-3 py-4
+        "
+      >
+        {/* Appearance */}
 
-        <p className="mt-1 text-xs capitalize text-muted-foreground">
-          {role}
-        </p>
+        <div className="mb-3 flex items-center justify-between px-2">
+          <span className="text-xs text-muted-foreground">
+            Appearance
+          </span>
+
+          <ThemeToggle />
+        </div>
+
+        {/* User Identity */}
+
+        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+          <div
+            className="
+              flex size-9 shrink-0 items-center justify-center
+              rounded-full border border-sidebar-border
+              bg-sidebar-accent
+              text-xs font-semibold
+            "
+          >
+            {me.user.name.charAt(0).toUpperCase()}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold">
+              {me.user.name}
+            </p>
+
+            <p className="truncate text-[11px] text-muted-foreground">
+              {me.business.name} · {role}
+            </p>
+          </div>
+        </div>
+
+        {/* Logout */}
 
         <Button
-          variant="outline"
-          className="mt-4 w-full justify-start"
+          type="button"
+          variant="ghost"
           onClick={logout}
+          className="
+            mt-2 h-9 w-full justify-start gap-3
+            px-3 text-xs font-medium
+            text-muted-foreground
+            hover:text-foreground
+          "
         >
-          <LogOut size={16} />
-          Logout
+          <LogOut className="size-4" />
+
+          Sign out
         </Button>
       </div>
     </aside>

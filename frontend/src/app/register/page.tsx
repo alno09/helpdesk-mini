@@ -1,21 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import {
-  ArrowRight,
-  Loader2,
-} from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 
 import { AuthShell } from "@/components/layout/auth-shell";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 
 import { publicRequest } from "@/lib/api";
 
@@ -92,7 +86,7 @@ export default function RegisterPage() {
   return (
     <AuthShell
       title="Create your workspace"
-      description="Register your business and create its administrator account."
+      description="Set up a dedicated support workspace for your business."
       footer={
         <>
           Already have an account?{" "}
@@ -107,27 +101,27 @@ export default function RegisterPage() {
     >
       <form
         onSubmit={handleSubmit}
-        className="space-y-5"
+        className="space-y-6"
       >
         {/* BUSINESS INFORMATION */}
 
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold">
-              Business Information
+        <section className="space-y-4">
+          <div className="border-b pb-3">
+            <h2 className="text-xs font-semibold">
+              Business information
             </h2>
 
-            <p className="text-xs text-muted-foreground">
-              Your business will have its own support workspace.
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Basic details about your organization.
             </p>
           </div>
 
           <div className="space-y-2">
             <label
               htmlFor="business_name"
-              className="text-sm font-medium"
+              className="text-xs font-medium"
             >
-              Business Name
+              Business name
             </label>
 
             <Input
@@ -143,6 +137,7 @@ export default function RegisterPage() {
               minLength={2}
               maxLength={150}
               disabled={loading}
+              className="h-10"
               required
             />
           </div>
@@ -150,9 +145,9 @@ export default function RegisterPage() {
           <div className="space-y-2">
             <label
               htmlFor="business_slug"
-              className="text-sm font-medium"
+              className="text-xs font-medium"
             >
-              Business Slug
+              Workspace identifier
             </label>
 
             <Input
@@ -170,38 +165,36 @@ export default function RegisterPage() {
               pattern="[a-z0-9]+(-[a-z0-9]+)*"
               title="Use lowercase letters, numbers and hyphens."
               disabled={loading}
+              className="h-10"
               required
             />
 
-            <p className="text-xs text-muted-foreground">
-              Use lowercase letters, numbers and hyphens.
-              The slug must be unique.
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Use lowercase letters, numbers, and hyphens.
+              This identifier must be unique.
             </p>
           </div>
-        </div>
-
-        <Separator />
+        </section>
 
         {/* ADMIN INFORMATION */}
 
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold">
-              Administrator Account
+        <section className="space-y-4">
+          <div className="border-b pb-3">
+            <h2 className="text-xs font-semibold">
+              Administrator account
             </h2>
 
-            <p className="text-xs text-muted-foreground">
-              This account will manage your business users
-              and support tickets.
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              The initial account for managing your workspace.
             </p>
           </div>
 
           <div className="space-y-2">
             <label
               htmlFor="name"
-              className="text-sm font-medium"
+              className="text-xs font-medium"
             >
-              Full Name
+              Full name
             </label>
 
             <Input
@@ -210,14 +203,12 @@ export default function RegisterPage() {
               autoComplete="name"
               value={form.name}
               onChange={(event) =>
-                updateField(
-                  "name",
-                  event.target.value,
-                )
+                updateField("name", event.target.value)
               }
               minLength={2}
               maxLength={150}
               disabled={loading}
+              className="h-10"
               required
             />
           </div>
@@ -225,9 +216,9 @@ export default function RegisterPage() {
           <div className="space-y-2">
             <label
               htmlFor="email"
-              className="text-sm font-medium"
+              className="text-xs font-medium"
             >
-              Email Address
+              Email address
             </label>
 
             <Input
@@ -237,12 +228,10 @@ export default function RegisterPage() {
               autoComplete="email"
               value={form.email}
               onChange={(event) =>
-                updateField(
-                  "email",
-                  event.target.value,
-                )
+                updateField("email", event.target.value)
               }
               disabled={loading}
+              className="h-10"
               required
             />
           </div>
@@ -250,7 +239,7 @@ export default function RegisterPage() {
           <div className="space-y-2">
             <label
               htmlFor="password"
-              className="text-sm font-medium"
+              className="text-xs font-medium"
             >
               Password
             </label>
@@ -262,49 +251,40 @@ export default function RegisterPage() {
               autoComplete="new-password"
               value={form.password}
               onChange={(event) =>
-                updateField(
-                  "password",
-                  event.target.value,
-                )
+                updateField("password", event.target.value)
               }
               minLength={8}
               maxLength={128}
               disabled={loading}
+              className="h-10"
               required
             />
           </div>
-        </div>
-
-        {/* ERROR */}
+        </section>
 
         {error && (
           <div
             role="alert"
-            className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+            className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs text-destructive"
           >
             {error}
           </div>
         )}
 
-        {/* SUBMIT */}
-
         <Button
           type="submit"
-          className="w-full"
+          className="h-10 w-full"
           disabled={loading}
         >
           {loading ? (
             <>
-              <Loader2
-                size={17}
-                className="animate-spin"
-              />
+              <Loader2 className="size-4 animate-spin" />
               Creating workspace...
             </>
           ) : (
             <>
-              Create Workspace
-              <ArrowRight size={17} />
+              Create workspace
+              <ArrowRight className="size-4" />
             </>
           )}
         </Button>

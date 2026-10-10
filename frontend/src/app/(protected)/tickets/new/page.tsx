@@ -1,23 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type FormEvent,
+} from "react";
 
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { ArrowLeft, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -36,7 +30,6 @@ import type {
   TicketPriority,
 } from "@/features/tickets/types";
 
-
 export default function NewTicketPage() {
   const router = useRouter();
   const me = useAuth();
@@ -51,20 +44,20 @@ export default function NewTicketPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-
   useEffect(() => {
     if (me && me.user.role !== "customer") {
       router.replace("/tickets");
     }
   }, [me, router]);
 
-
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
-    if (me?.user.role !== "customer") return;
+    if (loading || me?.user.role !== "customer") {
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -84,51 +77,55 @@ export default function NewTicketPage() {
     }
   }
 
-
   if (!me || me.user.role !== "customer") {
     return null;
   }
 
-
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <Button
-        variant="ghost"
-        asChild
-      >
-        <Link href="/tickets">
-          <ArrowLeft size={16} />
-          Back to Tickets
-        </Link>
-      </Button>
+    <div className="mx-auto w-full max-w-4xl space-y-6">
+      {/* BREADCRUMB */}
 
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          Create Ticket
+      <Link
+        href="/tickets"
+        className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" />
+        All tickets
+      </Link>
+
+      {/* HEADER */}
+
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          New ticket
         </h1>
 
-        <p className="mt-1 text-muted-foreground">
-          Describe your issue to get assistance.
+        <p className="text-sm text-muted-foreground">
+          Describe your request and start a support conversation.
         </p>
-      </div>
+      </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Ticket Information</CardTitle>
-          <CardDescription>
-            Provide details about your request.
-          </CardDescription>
-        </CardHeader>
+      {/* FORM */}
 
-        <CardContent>
-          <form
-            onSubmit={handleSubmit}
-            className="space-y-5"
-          >
+      <section className="overflow-hidden rounded-lg border bg-card">
+        <div className="border-b px-5 py-4">
+          <h2 className="text-sm font-semibold">
+            Ticket information
+          </h2>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            Provide the details needed to understand your issue.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-6 p-5 sm:p-6">
+            {/* SUBJECT */}
+
             <div className="space-y-2">
               <label
                 htmlFor="subject"
-                className="text-sm font-medium"
+                className="text-xs font-medium"
               >
                 Subject
               </label>
@@ -139,112 +136,155 @@ export default function NewTicketPage() {
                 value={form.subject}
                 minLength={3}
                 maxLength={255}
+                disabled={loading}
                 onChange={(event) =>
-                  setForm({
-                    ...form,
+                  setForm((previous) => ({
+                    ...previous,
                     subject: event.target.value,
-                  })
+                  }))
                 }
+                className="h-10"
                 required
               />
             </div>
 
-            <div className="space-y-2">
-              <label
-                htmlFor="category"
-                className="text-sm font-medium"
-              >
-                Category
-              </label>
+            {/* CATEGORY AND PRIORITY */}
 
-              <Input
-                id="category"
-                placeholder="e.g. Billing, Technical"
-                value={form.category}
-                minLength={2}
-                maxLength={100}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    category: event.target.value,
-                  })
-                }
-                required
-              />
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label
+                  htmlFor="category"
+                  className="text-xs font-medium"
+                >
+                  Category
+                </label>
+
+                <Input
+                  id="category"
+                  placeholder="e.g. Billing, Technical"
+                  value={form.category}
+                  minLength={2}
+                  maxLength={100}
+                  disabled={loading}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      category: event.target.value,
+                    }))
+                  }
+                  className="h-10"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="priority"
+                  className="text-xs font-medium"
+                >
+                  Priority
+                </label>
+
+                <Select
+                  value={form.priority}
+                  disabled={loading}
+                  onValueChange={(value) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      priority: value as TicketPriority,
+                    }))
+                  }
+                >
+                  <SelectTrigger
+                    id="priority"
+                    className="h-10! w-full"
+                  >
+                    <SelectValue placeholder="Select priority" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Priority
-              </label>
-
-              <Select
-                value={form.priority}
-                onValueChange={(value) =>
-                  setForm({
-                    ...form,
-                    priority: value as TicketPriority,
-                  })
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select priority" />
-                </SelectTrigger>
-
-                <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* DESCRIPTION */}
 
             <div className="space-y-2">
               <label
                 htmlFor="message"
-                className="text-sm font-medium"
+                className="text-xs font-medium"
               >
                 Description
               </label>
 
               <Textarea
                 id="message"
-                placeholder="Explain what happened..."
-                className="min-h-40"
+                placeholder="Explain what happened and how we can help..."
                 value={form.message}
                 maxLength={5000}
+                disabled={loading}
                 onChange={(event) =>
-                  setForm({
-                    ...form,
+                  setForm((previous) => ({
+                    ...previous,
                     message: event.target.value,
-                  })
+                  }))
                 }
+                className="min-h-44 resize-y text-sm"
                 required
               />
+
+              <p className="text-[11px] text-muted-foreground">
+                This message will start your ticket conversation.
+              </p>
             </div>
 
             {error && (
-              <p
+              <div
                 role="alert"
-                className="text-sm text-destructive"
+                className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs text-destructive"
               >
                 {error}
-              </p>
+              </div>
             )}
+          </div>
 
-            <div className="flex justify-end gap-3">
-              <Button variant="outline" asChild>
-                <Link href="/tickets">Cancel</Link>
+          {/* ACTION BAR */}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-4 sm:px-6">
+            <p className="text-[11px] text-muted-foreground">
+              All fields are required.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+              >
+                <Link href="/tickets">
+                  Cancel
+                </Link>
               </Button>
 
-              <Button type="submit" disabled={loading}>
-                <Send size={16} />
-                {loading ? "Creating..." : "Create Ticket"}
+              <Button
+                type="submit"
+                size="sm"
+                disabled={loading}
+              >
+                <Send className="size-3.5" />
+
+                {loading
+                  ? "Creating..."
+                  : "Create ticket"}
               </Button>
             </div>
-          </form>
-        </CardContent>
-      </Card>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }

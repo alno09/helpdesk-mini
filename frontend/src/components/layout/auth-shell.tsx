@@ -3,17 +3,12 @@ import type { ReactNode } from "react";
 
 import {
   Headset,
+  MessageSquareText,
   ShieldCheck,
-  MessagesSquare,
+  Ticket,
 } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface AuthShellProps {
   title: string;
@@ -29,85 +24,128 @@ export function AuthShell({
   footer,
 }: AuthShellProps) {
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      {/* BRANDING PANEL */}
+    <div className="flex min-h-screen w-full bg-background">
+      {/* BRAND PANEL */}
 
-      <aside className="hidden flex-col justify-between bg-zinc-950 p-12 text-white lg:flex">
+      <aside className="hidden w-[42%] flex-col justify-between border-r border-sidebar-border bg-sidebar px-10 py-9 lg:flex xl:px-16">
         <Link
           href="/login"
-          className="flex items-center gap-3"
+          className="inline-flex items-center gap-3 self-start"
         >
-          <div className="flex size-11 items-center justify-center rounded-xl bg-white text-zinc-950">
-            <Headset size={23} />
+          <div className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+            <Headset className="size-[18px]" />
           </div>
 
-          <span className="text-xl font-bold tracking-tight">
+          <span className="text-sm font-semibold tracking-tight">
             HelpDesk Mini
           </span>
         </Link>
 
-        <div className="max-w-lg space-y-7">
-          <div className="flex size-16 items-center justify-center rounded-2xl border border-white/20 bg-white/10">
-            <MessagesSquare size={32} />
-          </div>
+        <div className="max-w-md">
+          <p className="mb-5 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+            Customer support workspace
+          </p>
 
-          <div className="space-y-4">
-            <h1 className="text-5xl leading-tight font-semibold tracking-tight">
-              Better conversations.
-              <br />
-              Better support.
-            </h1>
+          <h2 className="max-w-sm text-3xl font-semibold leading-tight tracking-tight xl:text-4xl">
+            Support, without the clutter.
+          </h2>
 
-            <p className="text-lg leading-relaxed text-zinc-400">
-              A shared workspace for businesses to
-              manage support tickets and communicate
-              with customers in real time.
-            </p>
-          </div>
+          <p className="mt-5 max-w-sm text-sm leading-7 text-muted-foreground">
+            Keep support requests, team assignments, and
+            customer conversations in one focused workspace.
+          </p>
 
-          <div className="flex items-center gap-3 text-sm text-zinc-400">
-            <ShieldCheck size={19} />
-            <span>
-              Dedicated workspace for every business
-            </span>
+          <div className="mt-10 space-y-0 border-y border-sidebar-border">
+            <div className="flex items-center gap-4 border-b border-sidebar-border py-4">
+              <Ticket className="size-4 shrink-0 text-muted-foreground" />
+
+              <div>
+                <p className="text-xs font-medium">
+                  Organized ticket management
+                </p>
+
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Track requests from open to closed.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 border-b border-sidebar-border py-4">
+              <MessageSquareText className="size-4 shrink-0 text-muted-foreground" />
+
+              <div>
+                <p className="text-xs font-medium">
+                  Real-time conversations
+                </p>
+
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Communicate directly through tickets.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 py-4">
+              <ShieldCheck className="size-4 shrink-0 text-muted-foreground" />
+
+              <div>
+                <p className="text-xs font-medium">
+                  Separate business workspaces
+                </p>
+
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Keep each business&apos;s support data isolated.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        <p className="text-sm text-zinc-500">
-          HelpDesk Mini — Support Management Platform
+        <p className="text-[11px] text-muted-foreground">
+          HelpDesk Mini · Support Management Platform
         </p>
       </aside>
 
-      {/* FORM PANEL */}
+      {/* AUTH CONTENT */}
 
-      <main className="flex min-h-screen items-center justify-center bg-muted/30 px-5 py-10">
-        <div className="w-full max-w-md">
-          <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Headset size={22} />
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-16 shrink-0 items-center justify-between px-6 lg:justify-end lg:px-10">
+          <Link
+            href="/login"
+            className="flex items-center gap-2.5 lg:hidden"
+          >
+            <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <Headset className="size-4" />
             </div>
 
-            <span className="text-xl font-bold">
+            <span className="text-sm font-semibold">
               HelpDesk Mini
             </span>
-          </div>
+          </Link>
 
-          <Card className="shadow-sm">
-            <CardHeader className="space-y-2 pb-6">
-              <CardTitle className="text-2xl tracking-tight">
+          <ThemeToggle />
+        </header>
+
+        <div className="flex flex-1 items-center justify-center px-6 pb-16 pt-8 sm:px-10">
+          <div className="w-full max-w-[420px]">
+            <div className="mb-8">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Workspace access
+              </p>
+
+              <h1 className="text-2xl font-semibold tracking-tight">
                 {title}
-              </CardTitle>
+              </h1>
 
-              <CardDescription>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 {description}
-              </CardDescription>
-            </CardHeader>
+              </p>
+            </div>
 
-            <CardContent>{children}</CardContent>
-          </Card>
+            {children}
 
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            {footer}
+            <div className="mt-8 border-t pt-6 text-center text-xs text-muted-foreground">
+              {footer}
+            </div>
           </div>
         </div>
       </main>

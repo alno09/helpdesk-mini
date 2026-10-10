@@ -4,6 +4,8 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -11,21 +13,18 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { ArrowLeft, Send } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  Clock3,
+  Inbox,
+  Search,
+  Send,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import {
@@ -37,11 +36,11 @@ import {
 } from "@/components/ui/select";
 
 import { apiRequest, type User } from "@/lib/api";
-
 import { useAuth } from "@/features/auth/auth-context";
 
 import {
   getTicket,
+  getTickets,
   getTicketMessages,
   updateTicket,
 } from "@/features/tickets/api";
@@ -54,8 +53,8 @@ import {
 } from "@/features/chat/hooks/use-ticket-room";
 
 import type {
-  Ticket,
   Message,
+  Ticket,
   TicketStatus,
   UpdateTicketPayload,
 } from "@/features/tickets/types";
@@ -73,7 +72,42 @@ const nextStatus: Partial<
 };
 
 // ============================================================
-// TICKET DETAIL CONTENT
+// HELPERS
+// ============================================================
+
+function formatDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatLabel(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+// ============================================================
+// PAGE CONTENT
 // ============================================================
 
 function TicketDetailContent({
@@ -83,22 +117,32 @@ function TicketDetailContent({
 }) {
   const me = useAuth();
 
-  // Ticket state
+  const currentUserId = me?.user.id;
+  const currentRole = me?.user.role;
+
+  // Ticket data
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [agents, setAgents] = useState<User[]>([]);
 
-  // Form state
+  // Ticket navigator
+  const [nearbyTickets, setNearbyTickets] = useState<Ticket[]>([]);
+  const [ticketSearch, setTicketSearch] = useState("");
+  const [listLoading, setListLoading] = useState(true);
+
+  // Forms
   const [draft, setDraft] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("");
 
-  // UI state
+  // UI
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
   // ==========================================================
-  // WEBSOCKET EVENT HANDLER
+  // WEBSOCKET EVENTS
   // ==========================================================
 
   const handleRoomEvent = useCallback(
@@ -110,9 +154,7 @@ function TicketDetailContent({
               (message) => message.id === event.message.id,
             );
 
-            if (exists) {
-              return previous;
-            }
+            if (exists) return previous;
 
             return [...previous, event.message];
           });
@@ -122,6 +164,15 @@ function TicketDetailContent({
 
         case "ticket.updated": {
           setTicket(event.ticket);
+
+          setNearbyTickets((previous) =>
+            previous.map((item) =>
+              item.id === event.ticket.id
+                ? event.ticket
+                : item,
+            ),
+          );
+
           break;
         }
 
@@ -149,13 +200,11 @@ function TicketDetailContent({
   );
 
   // ==========================================================
-  // INITIAL DATA FETCHING
+  // INITIAL TICKET DATA
   // ==========================================================
 
   useEffect(() => {
-    if (!me) {
-      return;
-    }
+    if (currentUserId == null) return;
 
     if (!Number.isInteger(ticketId) || ticketId <= 0) {
       return;
@@ -164,7 +213,7 @@ function TicketDetailContent({
     let active = true;
 
     const agentsRequest =
-      me.user.role === "admin"
+      currentRole === "admin"
         ? apiRequest<User[]>("/users")
         : Promise.resolve<User[]>([]);
 
@@ -174,9 +223,7 @@ function TicketDetailContent({
       agentsRequest,
     ])
       .then(([ticketData, messageData, agentsData]) => {
-        if (!active) {
-          return;
-        }
+        if (!active) return;
 
         setTicket(ticketData);
         setMessages(messageData);
@@ -186,11 +233,11 @@ function TicketDetailContent({
             (user) => user.role === "agent",
           ),
         );
+
+        setError("");
       })
       .catch((err: unknown) => {
-        if (!active) {
-          return;
-        }
+        if (!active) return;
 
         setError(
           err instanceof Error
@@ -199,22 +246,92 @@ function TicketDetailContent({
         );
       })
       .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [ticketId, currentUserId, currentRole]);
+
+  // ==========================================================
+  // TICKET NAVIGATOR DATA
+  // ==========================================================
+
+  useEffect(() => {
+    if (currentUserId == null) return;
+
+    if (!Number.isInteger(ticketId) || ticketId <= 0) {
+      return;
+    }
+
+    let active = true;
+
+    getTickets()
+      .then((data) => {
         if (active) {
-          setLoading(false);
+          setNearbyTickets(data);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setNearbyTickets([]);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setListLoading(false);
         }
       });
 
     return () => {
       active = false;
     };
-  }, [ticketId, me]);
+  }, [currentUserId, ticketId]);
 
   // ==========================================================
-  // TICKET UPDATE HANDLER
+  // FILTER NAVIGATOR
+  // ==========================================================
+
+  const filteredNearbyTickets = useMemo(() => {
+    const query = ticketSearch.trim().toLowerCase();
+
+    return nearbyTickets
+      .filter((item) => {
+        if (!query) return true;
+
+        return (
+          item.subject.toLowerCase().includes(query) ||
+          String(item.id).includes(query)
+        );
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.updated_at).getTime() -
+          new Date(a.updated_at).getTime(),
+      );
+  }, [nearbyTickets, ticketSearch]);
+
+  // ==========================================================
+  // AUTO SCROLL CONVERSATION
+  // ==========================================================
+
+  useEffect(() => {
+    if (loading) return;
+
+    const container = messagesContainerRef.current;
+
+    if (!container) return;
+
+    container.scrollTop = container.scrollHeight;
+  }, [messages.length, loading]);
+
+  // ==========================================================
+  // UPDATE TICKET
   // ==========================================================
 
   async function handleUpdate(
-    data: UpdateTicketPayload,
+    payload: UpdateTicketPayload,
   ) {
     setSaving(true);
     setError("");
@@ -222,10 +339,16 @@ function TicketDetailContent({
     try {
       const updated = await updateTicket(
         ticketId,
-        data,
+        payload,
       );
 
       setTicket(updated);
+
+      setNearbyTickets((previous) =>
+        previous.map((item) =>
+          item.id === updated.id ? updated : item,
+        ),
+      );
     } catch (err) {
       setError(
         err instanceof Error
@@ -238,7 +361,7 @@ function TicketDetailContent({
   }
 
   // ==========================================================
-  // MESSAGE HANDLER
+  // SEND MESSAGE
   // ==========================================================
 
   function handleSendMessage(
@@ -248,14 +371,12 @@ function TicketDetailContent({
 
     const body = draft.trim();
 
-    if (!body) {
-      return;
-    }
+    if (!body) return;
 
     const success = sendMessage(body);
 
     if (!success) {
-      setError("WebSocket is not connected");
+      setError("WebSocket is not connected.");
       return;
     }
 
@@ -264,25 +385,19 @@ function TicketDetailContent({
   }
 
   // ==========================================================
-  // INVALID ID
+  // INVALID TICKET ID
   // ==========================================================
 
-  if (
-    !Number.isInteger(ticketId) ||
-    ticketId <= 0
-  ) {
+  if (!Number.isInteger(ticketId) || ticketId <= 0) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4 p-6">
+      <div className="space-y-4">
         <h1 className="text-xl font-semibold">
-          Invalid Ticket ID
+          Invalid ticket ID
         </h1>
-
-        <p className="text-sm text-muted-foreground">
-          The requested ticket ID is invalid.
-        </p>
 
         <Button variant="outline" asChild>
           <Link href="/tickets">
+            <ArrowLeft className="size-4" />
             Back to Tickets
           </Link>
         </Button>
@@ -291,24 +406,24 @@ function TicketDetailContent({
   }
 
   // ==========================================================
-  // LOADING STATE
+  // LOADING
   // ==========================================================
 
   if (!me || loading) {
     return (
       <div className="space-y-5">
-        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-8 w-44" />
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Skeleton className="h-125 w-full" />
-          <Skeleton className="h-75 w-full" />
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_248px]">
+          <Skeleton className="h-[550px] w-full" />
+          <Skeleton className="h-80 w-full" />
         </div>
       </div>
     );
   }
 
   // ==========================================================
-  // ERROR / NOT FOUND STATE
+  // NOT FOUND
   // ==========================================================
 
   if (!ticket || ticket.id !== ticketId) {
@@ -318,15 +433,13 @@ function TicketDetailContent({
           Unable to load ticket
         </h1>
 
-        <p
-          role="alert"
-          className="text-sm text-destructive"
-        >
-          {error || "Ticket not found"}
+        <p role="alert" className="text-sm text-destructive">
+          {error || "Ticket not found."}
         </p>
 
         <Button variant="outline" asChild>
           <Link href="/tickets">
+            <ArrowLeft className="size-4" />
             Back to Tickets
           </Link>
         </Button>
@@ -335,7 +448,7 @@ function TicketDetailContent({
   }
 
   // ==========================================================
-  // ROLE & PERMISSION
+  // PERMISSIONS
   // ==========================================================
 
   const role = me.user.role;
@@ -344,8 +457,7 @@ function TicketDetailContent({
     role === "admin" ||
     role === "agent";
 
-  const allowedNextStatus =
-    nextStatus[ticket.status];
+  const allowedNextStatus = nextStatus[ticket.status];
 
   const canSend =
     role !== "admin" &&
@@ -356,90 +468,208 @@ function TicketDetailContent({
   // ==========================================================
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-4">
 
-      {/* BACK NAVIGATION */}
+      {/* TOP NAVIGATION */}
 
-      <Button variant="ghost" asChild>
-        <Link href="/tickets">
-          <ArrowLeft size={16} />
-          Back to Tickets
+      <div className="flex items-center justify-between gap-4">
+        <Link
+          href="/tickets"
+          className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" />
+          All tickets
         </Link>
-      </Button>
 
-      {/* PAGE HEADER */}
-
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="mb-2 text-sm text-muted-foreground">
-            Ticket #{ticket.id}
-          </p>
-
-          <h1 className="text-3xl font-bold tracking-tight">
-            {ticket.subject}
-          </h1>
-
-          <p className="mt-2 text-sm text-muted-foreground">
-            Created{" "}
-            {new Date(
-              ticket.created_at,
-            ).toLocaleString()}
-          </p>
-        </div>
-
-        <TicketStatusBadge
-          status={ticket.status}
-        />
+        <span className="text-xs text-muted-foreground">
+          Ticket #{ticket.id}
+        </span>
       </div>
 
-      {/* MAIN CONTENT */}
+      {/* WORKSPACE */}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div
+        className="
+          grid min-w-0 items-start gap-4
+          xl:grid-cols-[minmax(0,1fr)_248px]
+          2xl:grid-cols-[220px_minmax(0,1fr)_248px]
+        "
+      >
 
-        {/* ============================================== */}
-        {/* CONVERSATION PANEL */}
-        {/* ============================================== */}
+        {/* ====================================================
+            LEFT — TICKET NAVIGATOR
+        ==================================================== */}
 
-        <Card className="min-w-0">
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle>
-                  Conversation
-                </CardTitle>
+        <aside
+          aria-label="Ticket navigator"
+          className="
+            hidden h-[min(760px,calc(100vh-9rem))]
+            min-h-[480px] flex-col
+            overflow-hidden rounded-lg border bg-card
+            2xl:flex
+          "
+        >
+          <div className="border-b px-4 py-4">
+            <h2 className="text-xs font-semibold">
+              All tickets
+            </h2>
 
-                <CardDescription className="mt-1">
-                  Ticket support messages
-                </CardDescription>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Switch conversations
+            </p>
+
+            <div className="relative mt-4">
+              <Search
+                className="
+                  pointer-events-none absolute
+                  top-1/2 left-2.5 size-3.5
+                  -translate-y-1/2 text-muted-foreground
+                "
+              />
+
+              <Input
+                type="search"
+                placeholder="Search tickets..."
+                aria-label="Search ticket navigator"
+                value={ticketSearch}
+                onChange={(event) =>
+                  setTicketSearch(event.target.value)
+                }
+                className="h-8 pl-8 text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {listLoading ? (
+              <div className="space-y-4 p-4">
+                {[1, 2, 3].map((item) => (
+                  <div key={item} className="space-y-2">
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                ))}
+              </div>
+            ) : filteredNearbyTickets.length === 0 ? (
+              <div className="p-5 text-center">
+                <Inbox className="mx-auto size-5 text-muted-foreground" />
+
+                <p className="mt-3 text-xs text-muted-foreground">
+                  No tickets found.
+                </p>
+              </div>
+            ) : (
+              <nav className="divide-y">
+                {filteredNearbyTickets.map((item) => {
+                  const active = item.id === ticketId;
+
+                  return (
+                    <Link
+                      key={item.id}
+                      href={`/tickets/${item.id}`}
+                      aria-current={
+                        active ? "page" : undefined
+                      }
+                      className={[
+                        "block space-y-2 px-4 py-3",
+                        "transition-colors",
+                        active
+                          ? "bg-accent"
+                          : "hover:bg-muted/50",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-muted-foreground">
+                          #{item.id}
+                        </span>
+
+                        {active && (
+                          <span className="size-1.5 rounded-full bg-primary" />
+                        )}
+                      </div>
+
+                      <p className="line-clamp-2 text-xs font-medium leading-relaxed">
+                        {item.subject}
+                      </p>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-[10px] capitalize text-muted-foreground">
+                          {formatLabel(item.status)}
+                        </span>
+
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatDate(item.updated_at)}
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </nav>
+            )}
+          </div>
+        </aside>
+
+        {/* ====================================================
+            CENTER — CONVERSATION
+        ==================================================== */}
+
+        <section
+          aria-label="Ticket conversation"
+          className="
+            flex h-[640px] min-h-[480px] min-w-0
+            flex-col overflow-hidden rounded-lg
+            border bg-card
+            xl:h-[min(760px,calc(100vh-9rem))]
+          "
+        >
+          {/* CONVERSATION HEADER */}
+
+          <header className="border-b px-5 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <p className="text-[11px] font-medium text-muted-foreground">
+                  Conversation · #{ticket.id}
+                </p>
+
+                <h1 className="wrap-break-word text-lg font-semibold tracking-tight">
+                  {ticket.subject}
+                </h1>
+
+                <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Clock3 className="size-3" />
+
+                  Created {formatDate(ticket.created_at)}
+                </p>
               </div>
 
-              <Badge
-                variant={
-                  connected
-                    ? "secondary"
-                    : "outline"
-                }
-              >
-                {connected
-                  ? "Connected"
-                  : "Disconnected"}
-              </Badge>
+              <TicketStatusBadge
+                status={ticket.status}
+              />
             </div>
-          </CardHeader>
+          </header>
 
-          <CardContent className="space-y-4">
+          {/* MESSAGE HISTORY */}
 
-            {/* MESSAGE HISTORY */}
+          <div
+            ref={messagesContainerRef}
+            className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
+          >
+            {messages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <div className="flex size-10 items-center justify-center rounded-lg border bg-muted/50">
+                  <Inbox className="size-5 text-muted-foreground" />
+                </div>
 
-            <ScrollArea className="h-100 rounded-lg border p-4">
-              <div className="space-y-4">
+                <p className="mt-3 text-sm font-medium">
+                  No messages yet
+                </p>
 
-                {messages.length === 0 && (
-                  <p className="text-center text-sm text-muted-foreground">
-                    No messages yet.
-                  </p>
-                )}
-
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The conversation will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-5">
                 {messages.map((message) => {
                   const isMine =
                     message.sender_id === me.user.id;
@@ -448,286 +678,393 @@ function TicketDetailContent({
                     <div
                       key={message.id}
                       className={[
-                        "max-w-[85%] rounded-xl p-3",
-                        isMine
-                          ? "ml-auto bg-primary text-primary-foreground"
-                          : "bg-muted",
+                        "flex min-w-0 gap-3",
+                        isMine ? "flex-row-reverse" : "",
                       ].join(" ")}
                     >
+                      {/* AVATAR */}
 
-                      {/* MESSAGE HEADER */}
-
-                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs opacity-80">
-                        <span className="font-semibold">
-                          {message.sender_name}
-                        </span>
-
-                        <span className="capitalize">
-                          {message.sender_role}
-                        </span>
+                      <div
+                        className="
+                          flex size-8 shrink-0 items-center justify-center
+                          rounded-full border bg-muted
+                          text-[11px] font-semibold
+                        "
+                      >
+                        {message.sender_name
+                          .charAt(0)
+                          .toUpperCase()}
                       </div>
 
-                      {/* MESSAGE BODY */}
+                      {/* MESSAGE CONTENT */}
 
-                      <p className="whitespace-pre-wrap wrap-break-word text-sm">
-                        {message.body}
-                      </p>
+                      <div
+                        className={[
+                          "flex min-w-0 max-w-[82%] flex-col gap-1.5",
+                          isMine ? "items-end" : "items-start",
+                        ].join(" ")}
+                      >
+                        {/* SENDER */}
 
-                      {/* MESSAGE TIMESTAMP */}
+                        <div
+                          className={[
+                            "flex flex-wrap items-center gap-2",
+                            isMine ? "flex-row-reverse" : "",
+                          ].join(" ")}
+                        >
+                          <span className="text-[11px] font-semibold">
+                            {isMine
+                              ? "You"
+                              : message.sender_name}
+                          </span>
 
-                      <p className="mt-2 text-right text-xs opacity-70">
-                        {new Date(
-                          message.created_at,
-                        ).toLocaleString()}
-                      </p>
+                          <span className="text-[10px] capitalize text-muted-foreground">
+                            {message.sender_role}
+                          </span>
+                        </div>
 
+                        {/* BUBBLE */}
+
+                        <div
+                          className={[
+                            "min-w-0 rounded-lg px-3.5 py-2.5",
+                            "text-[13px] leading-relaxed",
+                            isMine
+                              ? "bg-primary text-primary-foreground"
+                              : "border bg-muted/60 text-foreground",
+                          ].join(" ")}
+                        >
+                          <p className="whitespace-pre-wrap wrap-break-word">
+                            {message.body}
+                          </p>
+                        </div>
+
+                        {/* TIME */}
+
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatTime(message.created_at)}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            </ScrollArea>
-
-            {/* ERRORS */}
-
-            {(error || socketError) && (
-              <p
-                role="alert"
-                className="text-sm text-destructive"
-              >
-                {error || socketError}
-              </p>
             )}
+          </div>
 
-            {/* MESSAGE COMPOSER */}
+          {/* CONNECTION / ERRORS */}
 
+          {(error || socketError) && (
+            <div
+              role="alert"
+              className="border-t bg-destructive/5 px-4 py-2 text-xs text-destructive"
+            >
+              {error || socketError}
+            </div>
+          )}
+
+          {/* MESSAGE COMPOSER */}
+
+          <div className="border-t bg-card px-4 py-4">
             {canSend ? (
               <form
                 onSubmit={handleSendMessage}
                 className="space-y-3"
               >
                 <Textarea
-                  placeholder="Write your message..."
                   value={draft}
-                  maxLength={5000}
-                  disabled={!connected}
                   onChange={(event) =>
                     setDraft(event.target.value)
                   }
-                  className="min-h-24"
+                  placeholder={
+                    connected
+                      ? "Write a message..."
+                      : "Waiting for connection..."
+                  }
+                  aria-label="Message"
+                  maxLength={5000}
+                  disabled={!connected}
+                  className="
+                    min-h-20 resize-none
+                    border bg-background
+                    text-[13px]
+                  "
                 />
 
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between gap-3">
+                  {/* CONNECTION INDICATOR */}
+
+                  <div
+                    aria-live="polite"
+                    className="flex items-center gap-2"
+                  >
+                    <span
+                      className={[
+                        "size-1.5 rounded-full",
+                        connected
+                          ? "bg-emerald-500"
+                          : "bg-muted-foreground",
+                      ].join(" ")}
+                    />
+
+                    <span className="text-[11px] text-muted-foreground">
+                      {connected
+                        ? "Connected"
+                        : "Disconnected"}
+                    </span>
+                  </div>
+
                   <Button
                     type="submit"
+                    size="sm"
                     disabled={
                       !connected ||
                       !draft.trim()
                     }
+                    className="gap-2"
                   >
-                    <Send size={16} />
-                    Send Message
+                    <Send className="size-3.5" />
+
+                    Send message
                   </Button>
                 </div>
               </form>
             ) : (
-              <div className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+              <div className="rounded-md bg-muted px-4 py-3 text-xs text-muted-foreground">
                 {ticket.status === "closed"
                   ? "This ticket is closed. New messages are disabled."
-                  : "Only agents and customers can send messages."}
+                  : "Conversation is read-only for administrators."}
               </div>
             )}
+          </div>
+        </section>
 
-          </CardContent>
-        </Card>
+        {/* ====================================================
+            RIGHT — TICKET PROPERTIES
+        ==================================================== */}
 
-        {/* ============================================== */}
-        {/* TICKET INFORMATION SIDEBAR */}
-        {/* ============================================== */}
+        <aside
+          aria-label="Ticket details"
+          className="
+            overflow-hidden rounded-lg border
+            bg-card
+          "
+        >
+          {/* PANEL HEADER */}
 
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle>
-              Ticket Details
-            </CardTitle>
+          <div className="border-b px-4 py-4">
+            <h2 className="text-sm font-semibold">
+              Ticket details
+            </h2>
 
-            <CardDescription>
-              Information and actions
-            </CardDescription>
-          </CardHeader>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Properties and actions
+            </p>
+          </div>
 
-          <CardContent className="space-y-5">
+          {/* PROPERTIES */}
 
-            {/* TICKET INFORMATION */}
+          <div className="space-y-5 px-4 py-5">
+            <div className="space-y-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                Status
+              </p>
 
-            <div className="space-y-3 text-sm">
-
-              {/* STATUS */}
-
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">
-                  Status
-                </span>
-
-                <TicketStatusBadge
-                  status={ticket.status}
-                />
-              </div>
-
-              {/* PRIORITY */}
-
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">
-                  Priority
-                </span>
-
-                <span className="capitalize">
-                  {ticket.priority}
-                </span>
-              </div>
-
-              {/* CATEGORY */}
-
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">
-                  Category
-                </span>
-
-                <span>
-                  {ticket.category}
-                </span>
-              </div>
-
-              {/* ASSIGNED AGENT */}
-
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">
-                  Assigned Agent
-                </span>
-
-                <span>
-                  {ticket.assigned_agent_id ??
-                    "Unassigned"}
-                </span>
-              </div>
-
+              <TicketStatusBadge
+                status={ticket.status}
+              />
             </div>
 
-            {/* ACTIONS */}
+            <div className="space-y-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                Priority
+              </p>
 
-            <div className="border-t pt-5">
-              <h3 className="mb-3 text-sm font-semibold">
-                Actions
-              </h3>
+              <p className="text-xs font-medium capitalize">
+                {formatLabel(ticket.priority)}
+              </p>
+            </div>
 
-              <div className="space-y-3">
+            <div className="space-y-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                Category
+              </p>
 
-                {/* AGENT: TAKE TICKET */}
+              <p className="text-xs font-medium capitalize">
+                {formatLabel(ticket.category)}
+              </p>
+            </div>
 
-                {role === "agent" &&
-                  ticket.assigned_agent_id === null && (
-                    <Button
-                      className="w-full"
-                      disabled={saving}
-                      onClick={() =>
-                        handleUpdate({
-                          take: true,
-                        })
-                      }
-                    >
-                      Take Ticket
-                    </Button>
-                  )}
+            <div className="space-y-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                Assigned agent
+              </p>
 
-                {/* STAFF: STATUS TRANSITION */}
+              <p className="text-xs font-medium">
+                {ticket.assigned_agent_id != null
+                  ? `Agent #${ticket.assigned_agent_id}`
+                  : "Unassigned"}
+              </p>
+            </div>
 
-                {isStaff &&
-                  allowedNextStatus && (
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      disabled={saving}
-                      onClick={() =>
-                        handleUpdate({
-                          status: allowedNextStatus,
-                        })
-                      }
-                    >
-                      Move to{" "}
-                      {allowedNextStatus.replaceAll(
-                        "_",
-                        " ",
-                      )}
-                    </Button>
-                  )}
+            <div className="space-y-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                Customer
+              </p>
 
-                {/* CUSTOMER: REOPEN TICKET */}
+              <p className="text-xs font-medium">
+                Customer #{ticket.customer_id}
+              </p>
+            </div>
 
-                {role === "customer" &&
-                  ticket.status === "resolved" && (
-                    <Button
-                      className="w-full"
-                      disabled={saving}
-                      onClick={() =>
-                        handleUpdate({
-                          status: "open",
-                        })
-                      }
-                    >
-                      Reopen Ticket
-                    </Button>
-                  )}
+            <div className="space-y-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                Last updated
+              </p>
 
-                {/* ADMIN: ASSIGN AGENT */}
+              <p className="text-xs font-medium">
+                {formatDate(ticket.updated_at)}
+              </p>
+            </div>
+          </div>
 
-                {role === "admin" && (
-                  <div className="space-y-3">
-                    <Select
-                      value={selectedAgent}
-                      onValueChange={
-                        setSelectedAgent
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue
-                          placeholder="Select Agent"
-                        />
-                      </SelectTrigger>
+          {/* ACTIONS */}
 
-                      <SelectContent>
-                        {agents.map((agent) => (
-                          <SelectItem
-                            key={agent.id}
-                            value={String(agent.id)}
-                          >
-                            {agent.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+          <div className="border-t px-4 py-5">
+            <h3 className="mb-4 text-xs font-semibold">
+              Actions
+            </h3>
 
-                    <Button
-                      className="w-full"
-                      disabled={
-                        saving ||
-                        !selectedAgent
-                      }
-                      onClick={() =>
-                        handleUpdate({
-                          assigned_agent_id:
-                            Number(selectedAgent),
-                        })
-                      }
-                    >
-                      Assign Agent
-                    </Button>
-                  </div>
+            <div className="space-y-3">
+
+              {/* AGENT TAKE TICKET */}
+
+              {role === "agent" &&
+                ticket.assigned_agent_id === null && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full"
+                    disabled={saving}
+                    onClick={() =>
+                      handleUpdate({ take: true })
+                    }
+                  >
+                    Take ticket
+                  </Button>
                 )}
 
-              </div>
-            </div>
+              {/* STAFF STATUS TRANSITION */}
 
-          </CardContent>
-        </Card>
+              {isStaff && allowedNextStatus && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full capitalize"
+                  disabled={saving}
+                  onClick={() =>
+                    handleUpdate({
+                      status: allowedNextStatus,
+                    })
+                  }
+                >
+                  Move to {formatLabel(allowedNextStatus)}
+                </Button>
+              )}
+
+              {/* CUSTOMER REOPEN */}
+
+              {role === "customer" &&
+                ticket.status === "resolved" && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full"
+                    disabled={saving}
+                    onClick={() =>
+                      handleUpdate({
+                        status: "open",
+                      })
+                    }
+                  >
+                    Reopen ticket
+                  </Button>
+                )}
+
+              {/* ADMIN ASSIGN AGENT */}
+
+              {role === "admin" && (
+                <div className="space-y-3">
+                  <Select
+                    value={selectedAgent}
+                    onValueChange={setSelectedAgent}
+                  >
+                    <SelectTrigger
+                      className="w-full text-xs"
+                      aria-label="Select agent"
+                    >
+                      <SelectValue
+                        placeholder="Select an agent"
+                      />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {agents.map((agent) => (
+                        <SelectItem
+                          key={agent.id}
+                          value={String(agent.id)}
+                        >
+                          {agent.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full"
+                    disabled={
+                      saving ||
+                      !selectedAgent
+                    }
+                    onClick={() =>
+                      handleUpdate({
+                        assigned_agent_id:
+                          Number(selectedAgent),
+                      })
+                    }
+                  >
+                    Assign agent
+                  </Button>
+                </div>
+              )}
+
+              {!isStaff &&
+                !(
+                  role === "customer" &&
+                  ticket.status === "resolved"
+                ) && (
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    No ticket actions available.
+                  </p>
+                )}
+            </div>
+          </div>
+
+          {/* FOOTER */}
+
+          <div className="border-t px-4 py-3">
+            <Link
+              href="/tickets"
+              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              View all tickets
+              <ArrowUpRight className="size-3" />
+            </Link>
+          </div>
+        </aside>
 
       </div>
     </div>
@@ -739,9 +1076,7 @@ function TicketDetailContent({
 // ============================================================
 
 function TicketDetailRoute() {
-  const params = useParams<{
-    id: string;
-  }>();
+  const params = useParams<{ id: string }>();
 
   return (
     <TicketDetailContent
@@ -760,12 +1095,8 @@ export default function TicketDetailPage() {
     <Suspense
       fallback={
         <div className="space-y-4">
-          <Skeleton className="h-10 w-64" />
-
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <Skeleton className="h-125 w-full" />
-            <Skeleton className="h-75 w-full" />
-          </div>
+          <Skeleton className="h-8 w-44" />
+          <Skeleton className="h-[550px] w-full" />
         </div>
       }
     >
